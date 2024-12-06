@@ -180,7 +180,7 @@ class QLearningAgent:
         for actual_action in [(action - 1) % 4, action, (action + 1) % 4]:
             new_row, new_col = row, col
             
-            # 使用正确的gym作���义
+            # 使用正确的gym作定义
             if actual_action == 0:    # 左
                 new_col = If(col > 0, col - 1, col)
             elif actual_action == 1:  # 下
@@ -297,6 +297,7 @@ def safe_float_conversion(decimal_str):
         clean_str = decimal_str.split('?')[0]
         return float(clean_str)
     except:
+        print("Warning: 转换失败")
         return 0.0  # 转换失败时返回0
 
 # 使用示例

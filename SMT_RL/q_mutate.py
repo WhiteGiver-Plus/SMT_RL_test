@@ -56,6 +56,6 @@ if __name__ == "__main__":
     mutate_q_table(
         original_path='q_table.npy',
         mutated_path='q_table2.npy',
-        mutation_rate=1,    # 修改10%的值
+        mutation_rate=0.2,    # 修改10%的值
         mutation_strength=2  # 最大修改幅度为原值的±20%
     )

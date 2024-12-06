@@ -116,12 +116,14 @@ def optimize_hole_positions():
     
     # 为每个状态添加转移概率约束
     for s in range(16):
-        if s != 15:  # 不是终点
+        if s == 15:  # 终点
+            optimizer.add(success_probs1[s] == 1)
+            optimizer.add(success_probs2[s] == 1)
+        else:  # 非终点状态
             row, col = s // 4, s % 4
             
             # 对agent1的约束
             action1 = action_matrix1[row, col]
-            # 计算三个可能的下一个状态
             next_states1 = []
             for actual_action in [(action1 - 1) % 4, action1, (action1 + 1) % 4]:
                 new_row, new_col = row, col
@@ -154,23 +156,33 @@ def optimize_hole_positions():
             is_hole = Or(s == hole1, s == hole2, s == hole3)
             
             # agent1的转移概率约束
-            next_prob1 = (left_slide_prob * success_probs1[next_states1[0]] + 
-                         straight_prob * success_probs1[next_states1[1]] + 
-                         right_slide_prob * success_probs1[next_states1[2]])
+            next_prob1 = Sum([
+                left_slide_prob * success_probs1[next_states1[0]],
+                straight_prob * success_probs1[next_states1[1]],
+                right_slide_prob * success_probs1[next_states1[2]]
+            ])
             optimizer.add(success_probs1[s] == If(is_hole, 0, next_prob1))
             
             # agent2的转移概率约束
-            next_prob2 = (left_slide_prob * success_probs2[next_states2[0]] + 
-                         straight_prob * success_probs2[next_states2[1]] + 
-                         right_slide_prob * success_probs2[next_states2[2]])
+            next_prob2 = Sum([
+                left_slide_prob * success_probs2[next_states2[0]],
+                straight_prob * success_probs2[next_states2[1]],
+                right_slide_prob * success_probs2[next_states2[2]]
+            ])
             optimizer.add(success_probs2[s] == If(is_hole, 0, next_prob2))
             
             # 添加概率范围约束
-            optimizer.add(success_probs1[s] >= 0, success_probs1[s] <= 1)
-            optimizer.add(success_probs2[s] >= 0, success_probs2[s] <= 1)
+            optimizer.add(success_probs1[s] >= 0)
+            optimizer.add(success_probs1[s] <= 1)
+            optimizer.add(success_probs2[s] >= 0)
+            optimizer.add(success_probs2[s] <= 1)
+    
+    # 打印约束，帮助调试
+    print("\n=== 约束示例 ===")
+    print(f"State 14的约束: {optimizer.assertions()[-4]}")
     
     # 最大化差异
-    optimizer.maximize(Abs(success_probs1[0] - success_probs2[0]))
+    optimizer.maximize((success_probs1[0] - success_probs2[0]))
     
     # 设置求解器超时时间
     optimizer.set("timeout", 30000)
@@ -183,14 +195,23 @@ def optimize_hole_positions():
         hole2_pos = model.eval(hole2).as_long()
         hole3_pos = model.eval(hole3).as_long()
         
-        prob1 = safe_float_conversion(str(model.eval(success_probs1[0])))
-        prob2 = safe_float_conversion(str(model.eval(success_probs2[0])))
+        # 直接打印Z3的结果，不进行转换
+        print("\n=== Agent 1 的状态概率 ===")
+        for s in range(16):
+            print(f"状态 {s}: {model.eval(success_probs1[s])}")
+            
+        print("\n=== Agent 2 的状态概率 ===")
+        for s in range(16):
+            print(f"状态 {s}: {model.eval(success_probs2[s])}")
+        
+        prob1 = model.eval(success_probs1[0])
+        prob2 = model.eval(success_probs2[0])
         
         print("\n=== 优化结果 ===")
         print(f"最优洞位置: {hole1_pos}, {hole2_pos}, {hole3_pos}")
-        print(f"Agent 1 成功概率: {prob1:.4f}")
-        print(f"Agent 2 成功概率: {prob2:.4f}")
-        print(f"最大概率差异: {abs(prob1 - prob2):.4f}")
+        print(f"Agent 1 成功概率: {prob1}")
+        print(f"Agent 2 成功概率: {prob2}")
+        print(f"最大概率差异: {model.eval((success_probs1[0] - success_probs2[0]))}")
         
         # 可视化结果
         grid = ['.'] * 16
