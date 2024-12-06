@@ -180,7 +180,7 @@ class QLearningAgent:
         for actual_action in [(action - 1) % 4, action, (action + 1) % 4]:
             new_row, new_col = row, col
             
-            # 使用正确的gym作定义
+            # 使用正确的gym作���义
             if actual_action == 0:    # 左
                 new_col = If(col > 0, col - 1, col)
             elif actual_action == 1:  # 下
@@ -274,6 +274,22 @@ class QLearningAgent:
                 print(f"{action_symbols[action]} ", end="")
             print()  # 换行
 
+    def get_optimal_action_matrix(self):
+        """返回4x4网格中每个位置的最优动作矩阵
+        
+        Returns:
+            numpy array: 4x4的最优动作矩阵，每个元素是动作编号 (0:左, 1:下, 2:右, 3:上)
+        """
+        action_matrix = np.zeros((4, 4), dtype=int)
+        for row in range(4):
+            for col in range(4):
+                state = row * 4 + col
+                if state == 15:  # 终点
+                    action_matrix[row, col] = -1
+                else:
+                    action_matrix[row, col] = self.get_action_z3(state)
+        return action_matrix
+
 def safe_float_conversion(decimal_str):
     """安全地将Z3的decimal字符串转换为float"""
     try:
@@ -327,7 +343,7 @@ if __name__ == "__main__":
     agent.solver = Solver()
     
     # 使用新的洞位置
-    holes_2 = [6, 9, 12]  # 新的洞位置
+    holes_2 = [3, 10, 7]  # 新的洞位置
     agent.solver.add(agent.hole1 == holes_2[0])
     agent.solver.add(agent.hole2 == holes_2[1])
     agent.solver.add(agent.hole3 == holes_2[2])
@@ -345,7 +361,7 @@ if __name__ == "__main__":
         print(f"左滑概率: {model.eval(agent.left_slide_prob)}")
         print(f"从起点(0)到终点(15)的成功概率: {model.eval(success_prob)}")
         
-        # 打印最��动作
+        # 打印最优动作
         agent.print_optimal_actions(holes=holes_2)
         
         # 模拟一个回合
