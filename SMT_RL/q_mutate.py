@@ -1,4 +1,5 @@
 import numpy as np
+import os
 
 def mutate_q_table(original_path='q_table.npy', mutated_path='q_table2.npy', mutation_rate=0.1, mutation_strength=0.2):
     """
@@ -48,14 +49,38 @@ def mutate_q_table(original_path='q_table.npy', mutated_path='q_table2.npy', mut
     print(f"最大修改幅度: {np.max(diff):.4f}")
     print(f"修改后的Q表已保存到: {mutated_path}")
 
-if __name__ == "__main__":
-    # 复制原始Q表作为第一个Q表
-    np.save('q_table1.npy', np.load('q_table.npy'))
+def generate_mutants(num=100, base_path='mutants', grid_size=4):
+    """
+    生成多个Q表变异体
     
-    # 创建修改后的第二个Q表
-    mutate_q_table(
-        original_path='q_table.npy',
-        mutated_path='q_table2.npy',
-        mutation_rate=0.2,    # 修改10%的值
-        mutation_strength=2  # 最大修改幅度为原值的±20%
-    )
+    Args:
+        num: 要生成的变异体数量
+        base_path: 保存变异体的目录
+        grid_size: 网格大小
+    """
+    # 创建保存目录
+    os.makedirs(base_path, exist_ok=True)
+    
+    # 获取原始Q表的大小
+    original_q_table = np.load('q_table.npy')
+    
+    # 如果原始Q表大小不匹配，创建新的Q表
+    if original_q_table.shape[0] != grid_size * grid_size:
+        print(f"创建新的 {grid_size}x{grid_size} Q表")
+        original_q_table = np.zeros((grid_size * grid_size, 4))
+    
+    # 复制原始Q表作为基准
+    np.save(f'{base_path}/q_table_0.npy', original_q_table)
+    
+    # 生成多个变异体
+    for i in range(1, num+1):
+        mutate_q_table(
+            original_path='q_table.npy',
+            mutated_path=f'{base_path}/q_table_{i}.npy',
+            mutation_rate=0.2,
+            mutation_strength=20
+        )
+
+if __name__ == "__main__":
+    # 使用7x7网格生成变异体
+    generate_mutants(grid_size=7)

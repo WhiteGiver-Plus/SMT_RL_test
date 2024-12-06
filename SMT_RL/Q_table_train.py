@@ -1,10 +1,35 @@
 import gymnasium as gym
 import numpy as np
+import random
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 class QTableTrainer:
-    def __init__(self, learning_rate=0.1, discount_factor=0.96, epsilon=1.0, epsilon_decay=0.995, epsilon_min=0.01):
+    def __init__(self, grid_size=4, num_holes=3, learning_rate=0.2, discount_factor=0.99, epsilon=1.0, epsilon_decay=0.997, epsilon_min=0.01):
+        """
+        初始化Q表训练器
+        
+        Args:
+            grid_size: 网格大小
+            num_holes: 洞的数量
+            learning_rate: 学习率
+            discount_factor: 折扣因子
+            epsilon: 初始探索率
+            epsilon_decay: 探索率衰减
+            epsilon_min: 最小探索率
+        """
         # 创建冰湖环境
-        self.env = gym.make('FrozenLake-v1', is_slippery=True)
+        self.grid_size = grid_size
+        self.total_states = grid_size * grid_size
+        self.num_holes = num_holes
+        
+        # 生成随机洞的位置（不包括起点和终点）
+        available_positions = list(range(1, self.total_states - 1))
+        self.hole_positions = random.sample(available_positions, num_holes)
+        
+        self.env = gym.make('FrozenLake-v1', 
+                           desc=self._generate_map(grid_size),
+                           is_slippery=True)
         
         # 训练参数
         self.lr = learning_rate
@@ -13,8 +38,32 @@ class QTableTrainer:
         self.epsilon_decay = epsilon_decay
         self.epsilon_min = epsilon_min
         
-        # 初始化Q表 (16个状态, 4个动作)
-        self.q_table = np.zeros((16, 4))
+        # 初始化Q表 (states x 4个动作)
+        self.q_table = np.zeros((self.total_states, 4))
+    
+    def _generate_map(self, size):
+        """生成指定大小的地图描述，包含指定数量的洞
+        
+        Args:
+            size: 网格大小
+            
+        Returns:
+            list of str: 地图描述
+        """
+        # 创建一个空地图，所有位置都是F (冰面)
+        map_desc = ['F' * size for _ in range(size)]
+        
+        # 设置起点(S)和终点(G)
+        map_desc[0] = 'S' + map_desc[0][1:]
+        map_desc[-1] = map_desc[-1][:-1] + 'G'
+        
+        # 添加洞(H)
+        for hole in self.hole_positions:
+            row = hole // size
+            col = hole % size
+            map_desc[row] = map_desc[row][:col] + 'H' + map_desc[row][col+1:]
+        
+        return map_desc
     
     def get_action(self, state):
         # epsilon-greedy策略选择动作
@@ -52,10 +101,15 @@ class QTableTrainer:
     
     def save_q_table(self, filename="q_table.npy"):
         np.save(filename, self.q_table)
+        # 同时保存洞的位置，以便后续使用
+        np.save(filename.replace('.npy', '_holes.npy'), self.hole_positions)
+        print(f"洞的位置: {self.hole_positions}")
     
     def evaluate(self, num_episodes=1000, render=False):
         # 创建测试环境
-        test_env = gym.make('FrozenLake-v1', is_slippery=True, 
+        test_env = gym.make('FrozenLake-v1', 
+                           desc=self._generate_map(self.grid_size),
+                           is_slippery=True, 
                            render_mode='human' if render else None)
         successes = 0
         
@@ -72,11 +126,43 @@ class QTableTrainer:
                     
         success_rate = successes / num_episodes
         return success_rate
+    
+    def visualize_policy(self):
+        """以字符串形式显示最优策略"""
+        actions = np.argmax(self.q_table, axis=1)
+        
+        # 定义动作映射
+        action_symbols = {
+            0: '↑',  # 上
+            1: '→',  # 右
+            2: '↓',  # 下
+            3: '←'   # 左
+        }
+        
+        # 创建策略表格
+        print("\n最优策略表格:")
+        print("-" * (self.grid_size * 4 + 1))
+        
+        for i in range(self.grid_size):
+            row = "|"
+            for j in range(self.grid_size):
+                state = i * self.grid_size + j
+                if state in self.hole_positions:
+                    symbol = " H "
+                elif i == self.grid_size-1 and j == self.grid_size-1:
+                    symbol = " G "
+                elif i == 0 and j == 0:
+                    symbol = " S "
+                else:
+                    symbol = f" {action_symbols[actions[state]]} "
+                row += symbol + "|"
+            print(row)
+            print("-" * (self.grid_size * 4 + 1))
 
 if __name__ == "__main__":
     # 创建训练器并训练
-    trainer = QTableTrainer()
-    trainer.train(episodes=20000)
+    trainer = QTableTrainer(grid_size=6, num_holes=4)  # 7x7网格，4个洞
+    trainer.train(episodes=50000)
     
     # 保存Q表
     trainer.save_q_table()
@@ -85,4 +171,7 @@ if __name__ == "__main__":
     # 评估模型性能
     success_rate = trainer.evaluate(num_episodes=1000)
     print(f"测试成功率: {success_rate:.2%}")
+    
+    # 在评估之后添加可视化
+    trainer.visualize_policy()
     

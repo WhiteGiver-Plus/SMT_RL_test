@@ -2,35 +2,23 @@ from z3 import *
 import numpy as np
 
 class QLearningAgent:
-    def __init__(self, state_size, action_size):
+    def __init__(self, state_size, action_size, grid_size=4):
+        """
+        初始化Q-learning代理
+        
+        Args:
+            state_size: 状态空间大小
+            action_size: 动作空间大小
+            grid_size: 网格大小
+        """
         # Z3 solver
         self.solver = Solver()
-        
-        # 定义洞的位置为Z3变量
-        self.hole1 = Int('hole1')
-        self.hole2 = Int('hole2')
-        self.hole3 = Int('hole3')
-        
-        # 添加洞的位置约束
-        self.solver.add(self.hole1 >= 0, self.hole1 < 16)
-        self.solver.add(self.hole2 >= 0, self.hole2 < 16)
-        self.solver.add(self.hole3 >= 0, self.hole3 < 16)
-        self.solver.add(Distinct([self.hole1, self.hole2, self.hole3]))
-        
-        # 定义滑动概率为Z3 Real变量
-        self.straight_prob = Real('straight_prob')
-        self.right_slide_prob = Real('right_slide_prob')
-        self.left_slide_prob = Real('left_slide_prob')
-        
-        # 添加概率约束
-        self.solver.add(self.straight_prob >= 0, self.straight_prob <= 1)
-        self.solver.add(self.right_slide_prob >= 0, self.right_slide_prob <= 1)
-        self.solver.add(self.left_slide_prob >= 0, self.left_slide_prob <= 1)
-        self.solver.add(self.straight_prob + self.right_slide_prob + self.left_slide_prob == 1)
+        self.grid_size = grid_size
+        self.total_states = grid_size * grid_size
         
         # 初始化Q表
         self.q_table = np.zeros((state_size, action_size))
-        
+    
     def load_q_table(self, filename):
         # 从文件加载Q表
         self.q_table = np.load(filename)
@@ -89,7 +77,7 @@ class QLearningAgent:
         Args:
             start_state: 起始状态
             max_steps: 最大步数，防止无限循环
-            holes: 洞的位置列表，默认为[5, 7, 11]
+            holes: 位置列表，默认为[5, 7, 11]
         """
         current_state = start_state
         step = 0
@@ -125,7 +113,7 @@ class QLearningAgent:
             print("达到最大步数限制，模拟结束")
 
     def get_next_state(self, state, action):
-        """根据当前状态和动作计算下一个状态，考虑冰面滑动的情况
+        """据前状态和动作计算下一个状态，考虑冰面滑动的情况
         
         Args:
             state: 当前状 (0-15)
@@ -161,86 +149,92 @@ class QLearningAgent:
             
         return row * 4 + col
 
-    def get_next_state_probability(self, state, action, target_state):
+    def get_next_state_probability(self, state, action, target_state, straight_prob=None, right_slide_prob=None, left_slide_prob=None):
         """计算从当前状态执行动作到达目标状态的概率
         
         Args:
             state: 当前状态
             action: 执行的动作 (0:左, 1:下, 2:右, 3:上)
             target_state: 目标状态
+            straight_prob, right_slide_prob, left_slide_prob: 移动概率变量，如果未提供则使用1/3
             
         Returns:
             Z3表达式，表示转移概率
         """
-        row = state // 4
-        col = state % 4
+        # 如果未提供概率变量，使用默认值1/3
+        if straight_prob is None:
+            straight_prob = RealVal(1)/3
+        if right_slide_prob is None:
+            right_slide_prob = RealVal(1)/3
+        if left_slide_prob is None:
+            left_slide_prob = RealVal(1)/3
+        
+        row = state // self.grid_size
+        col = state % self.grid_size
         
         # 计算三种滑动方向的下一个状态
         next_states = []
         for actual_action in [(action - 1) % 4, action, (action + 1) % 4]:
             new_row, new_col = row, col
             
-            # 使用正确的gym作定义
+            # 使用正确的gym动作定义
             if actual_action == 0:    # 左
                 new_col = If(col > 0, col - 1, col)
             elif actual_action == 1:  # 下
-                new_row = If(row < 3, row + 1, row)
+                new_row = If(row < self.grid_size-1, row + 1, row)
             elif actual_action == 2:  # 右
-                new_col = If(col < 3, col + 1, col)
+                new_col = If(col < self.grid_size-1, col + 1, col)
             elif actual_action == 3:  # 上
                 new_row = If(row > 0, row - 1, row)
             
-            next_state = new_row * 4 + new_col
+            next_state = new_row * self.grid_size + new_col
             next_states.append(next_state)
         
         # 计算到达目标状态的概率
         prob = Sum([
-            If(next_states[0] == target_state, self.left_slide_prob, 0),    # 左滑动概率
-            If(next_states[1] == target_state, self.straight_prob, 0),      # 直行概率
-            If(next_states[2] == target_state, self.right_slide_prob, 0)    # 右滑动概率
+            If(next_states[0] == target_state, left_slide_prob, 0),    # 左滑动概率
+            If(next_states[1] == target_state, straight_prob, 0),      # 直行概率
+            If(next_states[2] == target_state, right_slide_prob, 0)    # 右滑动概率
         ])
         
         return prob
 
-    def calculate_success_probability(self, start_state=0, holes=None):
+    def calculate_success_probability(self, start_state=0, holes=None, straight_prob=None, right_slide_prob=None, left_slide_prob=None):
         """计算从起始状态到达终点的概率
         
         Args:
             start_state: 起始状态
-            holes: 可选的洞位置列表 [hole1, hole2, hole3]，使用 z3 变量
+            holes: 洞的位置列表
+            straight_prob, right_slide_prob, left_slide_prob: 移动概率变量，如果未提供则使用1/3
         """
         # 为每个状态创建到达终点的概率变量
         success_probs = {}
-        for state in range(16):
+        for state in range(self.total_states):
             success_probs[state] = Real(f'success_prob_{state}')
             
         # 添加终点约束
-        self.solver.add(success_probs[15] == 1)  # 终点
+        self.solver.add(success_probs[self.total_states-1] == 1)  # 终点
         
         # 为每个状态添加概率转移方程
-        for state in range(16):
-            if state != 15:  # 不是终点
+        for state in range(self.total_states):
+            if state != self.total_states-1:  # 不是终点
                 # 检查是否是洞
                 if holes is not None:
-                    # 使用传入的洞位置
-                    hole1, hole2, hole3 = holes
-                    is_hole = Or(state == hole1, 
-                               state == hole2, 
-                               state == hole3)
+                    # 使用传入的洞位置列表，将numpy数组转换为Z3整数常量
+                    is_hole = Or([state == IntVal(int(h)) for h in holes])
                 else:
-                    # 使用类中定义的洞位置
-                    is_hole = Or(state == self.hole1, 
-                               state == self.hole2, 
-                               state == self.hole3)
+                    # 如果没有提供洞的位置，则没有洞
+                    is_hole = False
                 
                 # 直接使用gym的动作映射
                 action = self.get_action_z3(state)
                 
                 # 计算转移概率（使用gym的动作定义）
                 next_prob = 0
-                for next_state in range(16):
-                    trans_prob = self.get_next_state_probability(state, action, next_state)
-                    next_prob = next_prob + If(next_state == 15,
+                for next_state in range(self.total_states):
+                    trans_prob = self.get_next_state_probability(state, action, next_state,
+                                                              straight_prob, right_slide_prob, left_slide_prob)
+                    next_prob = next_prob + If(next_state == self.total_states-1,
                                              trans_prob,
                                              trans_prob * success_probs[next_state])
                 
@@ -253,19 +247,19 @@ class QLearningAgent:
         
         return success_probs[start_state]
 
-    def print_optimal_actions(self, holes=[5, 7, 11]):
-        """打印4x4网格中每个位置的最优动作
+    def print_optimal_actions(self, holes):
+        """打印网格中每个位置的最优动作
         
         Args:
-            holes: 洞的位置列表，默认为[5, 7, 11]
+            holes: 洞的位置列表
         """
         action_symbols = {0: '←', 1: '↓', 2: '→', 3: '↑', None: 'X'}
-        print("\n最优动作网格 (↑:上 ↓:下 ←:左 →:右 X:洞/终点):")
+        print(f"\n最优动作网格 (↑:上 ↓:下 ←:左 →:右 X:洞/终点):")
         
-        for row in range(4):
-            for col in range(4):
-                state = row * 4 + col
-                if state == 15:  # 终点
+        for row in range(self.grid_size):
+            for col in range(self.grid_size):
+                state = row * self.grid_size + col
+                if state == self.total_states - 1:  # 终点
                     action = None
                 elif state in holes:  # 洞
                     action = None
@@ -275,16 +269,16 @@ class QLearningAgent:
             print()  # 换行
 
     def get_optimal_action_matrix(self):
-        """返回4x4网格中每个位置的最优动作矩阵
+        """返回网格中每个位置的最优动作矩阵
         
         Returns:
-            numpy array: 4x4的最优动作矩阵，每个元素是动作编号 (0:左, 1:下, 2:右, 3:上)
+            numpy array: grid_size x grid_size的最优动作矩阵
         """
-        action_matrix = np.zeros((4, 4), dtype=int)
-        for row in range(4):
-            for col in range(4):
-                state = row * 4 + col
-                if state == 15:  # 终点
+        action_matrix = np.zeros((self.grid_size, self.grid_size), dtype=int)
+        for row in range(self.grid_size):
+            for col in range(self.grid_size):
+                state = row * self.grid_size + col
+                if state == self.total_states - 1:  # 终点
                     action_matrix[row, col] = -1
                 else:
                     action_matrix[row, col] = self.get_action_z3(state)
@@ -302,70 +296,44 @@ def safe_float_conversion(decimal_str):
 
 # 使用示例
 if __name__ == "__main__":
-    agent = QLearningAgent(16, 4)
+    agent = QLearningAgent(36, 4, grid_size=6)  # 使用6x6网格
     agent.load_q_table('q_table.npy')
+    
+    # 加载洞的位置
+    holes = np.load('q_table_holes.npy')
     
     # 测试场景1：标准设置
     print("\n=== 测试场景1：标准设置 ===")
     agent.solver = Solver()
     
     # 设置具体参数
-    holes_1 = [5, 7, 11]  # 定义洞的位置
-    agent.solver.add(agent.hole1 == holes_1[0])
-    agent.solver.add(agent.hole2 == holes_1[1])
-    agent.solver.add(agent.hole3 == holes_1[2])
-    agent.solver.add(agent.straight_prob == 1/3)
-    agent.solver.add(agent.right_slide_prob == 1/3)
-    agent.solver.add(agent.left_slide_prob == 1/3)
+    # 定义滑动概率为Z3 Real变量
+    straight_prob = Real('straight_prob')
+    right_slide_prob = Real('right_slide_prob')
+    left_slide_prob = Real('left_slide_prob')
+    
+    # 添加概率约束
+    agent.solver.add(straight_prob == RealVal(1)/3)
+    agent.solver.add(right_slide_prob == RealVal(1)/3)
+    agent.solver.add(left_slide_prob == RealVal(1)/3)
     
     # 计算成功概率
-    success_prob = agent.calculate_success_probability(start_state=0)
+    success_prob = agent.calculate_success_probability(start_state=0, holes=holes)
     
     # 求解并打印结果
     if agent.solver.check() == sat:
         model = agent.solver.model()
-        print(f"洞的位置: {model.eval(agent.hole1)}, {model.eval(agent.hole2)}, {model.eval(agent.hole3)}")
-        print(f"直行概率: {safe_float_conversion(model.eval(agent.straight_prob).as_decimal(20))}")
-        print(f"右滑概率: {safe_float_conversion(model.eval(agent.right_slide_prob).as_decimal(20))}")
-        print(f"左滑概率: {safe_float_conversion(model.eval(agent.left_slide_prob).as_decimal(20))}")
-        print(f"\n从起点(0)到终点(15)的成功概率: {safe_float_conversion(model.eval(success_prob).as_decimal(20))}")
+        print(f"洞的位置: {holes}")
+        print(f"直行概率: {safe_float_conversion(model.eval(straight_prob).as_decimal(20))}")
+        print(f"右滑概率: {safe_float_conversion(model.eval(right_slide_prob).as_decimal(20))}")
+        print(f"左滑概率: {safe_float_conversion(model.eval(left_slide_prob).as_decimal(20))}")
+        print(f"\n从起点(0)到终点({agent.total_states-1})的成功概率: {safe_float_conversion(model.eval(success_prob).as_decimal(20))}")
         
         # 打印最优动作
-        agent.print_optimal_actions(holes=holes_1)
+        agent.print_optimal_actions(holes)
         
         # 模拟一个回合
-        # agent.simulate_episode(start_state=0, holes=holes_1)
+        # agent.simulate_episode(start_state=0, holes=holes)
     else:
         print("无解")
         print(agent.solver.unsat_core())
-
-    # 测试场景2：更改洞的位置
-    print("\n=== 测试场景2：更改洞的位置 ===")
-    agent.solver = Solver()
-    
-    # 使用新的洞位置
-    holes_2 = [3, 10, 7]  # 新的洞位置
-    agent.solver.add(agent.hole1 == holes_2[0])
-    agent.solver.add(agent.hole2 == holes_2[1])
-    agent.solver.add(agent.hole3 == holes_2[2])
-    agent.solver.add(agent.straight_prob == 0.5)
-    agent.solver.add(agent.right_slide_prob == 0.3)
-    agent.solver.add(agent.left_slide_prob == 0.2)
-    
-    success_prob = agent.calculate_success_probability(start_state=0)
-    
-    if agent.solver.check() == sat:
-        model = agent.solver.model()
-        print(f"洞的位置: {model.eval(agent.hole1)}, {model.eval(agent.hole2)}, {model.eval(agent.hole3)}")
-        print(f"直行概率: {model.eval(agent.straight_prob)}")
-        print(f"右滑概率: {model.eval(agent.right_slide_prob)}")
-        print(f"左滑概率: {model.eval(agent.left_slide_prob)}")
-        print(f"从起点(0)到终点(15)的成功概率: {model.eval(success_prob)}")
-        
-        # 打印最优动作
-        agent.print_optimal_actions(holes=holes_2)
-        
-        # 模拟一个回合
-        # agent.simulate_episode(start_state=0, holes=holes_2)
-    else:
-        print("无解")
