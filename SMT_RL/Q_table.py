@@ -47,8 +47,14 @@ class QLearningAgent:
         # 直接返回最大Q值对应的动作
         return int(np.argmax(self.q_table[state]))
 
-    def visualize_action(self, state, action, actual_next_state):
+    def visualize_action(self, state, action, actual_next_state, holes=[5, 7, 11]):
         """可视化4x4网格世界中的状态和动作，显示实际移动结果
+        
+        Args:
+            state: 当前状态
+            action: 执行的动作
+            actual_next_state: 实际到达的下一个状态
+            holes: 洞的位置列表，默认为[5, 7, 11]
         """
         # 定义4x4网格
         grid = ['.'] * 16
@@ -56,14 +62,13 @@ class QLearningAgent:
         # 设置特殊位置
         grid[state] = 'P'  # 当前位置
         grid[15] = 'G'     # 目标位置
-        grid[5] = 'H'      # 洞
-        grid[7] = 'H'      # 洞
-        grid[11] = 'H'     # 洞
+        for hole in holes:
+            grid[hole] = 'H'  # 洞
         
         # 显示动作箭头
         action_symbols = {
             0: '←',  # LEFT
-            1: '↓',  # DOWN
+            1: '',  # DOWN
             2: '→',  # RIGHT
             3: '↑'   # UP
         }
@@ -78,12 +83,13 @@ class QLearningAgent:
             print(' '.join(grid[i:i+4]))
         print()
 
-    def simulate_episode(self, start_state=0, max_steps=100):
+    def simulate_episode(self, start_state=0, max_steps=100, holes=[5, 7, 11]):
         """模拟一个完整的回合，从起点到终点（或失败）
         
         Args:
             start_state: 起始状态
             max_steps: 最大步数，防止无限循环
+            holes: 洞的位置列表，默认为[5, 7, 11]
         """
         current_state = start_state
         step = 0
@@ -91,7 +97,7 @@ class QLearningAgent:
         print("\n=== 开始模拟回合 ===")
         print("起始位置:", start_state)
         print("目标位置: 15")
-        print("危险位置: 5, 7, 11")
+        print("危险位置:", holes)
         
         while step < max_steps:
             # 获取当前状态下的最优动作
@@ -99,13 +105,13 @@ class QLearningAgent:
             
             # 可视化当前状态和动作
             actual_next_state = self.get_next_state(current_state, action)
-            self.visualize_action(current_state, action, actual_next_state)
+            self.visualize_action(current_state, action, actual_next_state, holes)
             
             # 检查是否到达终点或掉入洞中
             if actual_next_state == 15:  # 到达目标
                 print("🎉 成功到达目标！")
                 break
-            elif actual_next_state in [5, 7, 11]:  # ��入洞中
+            elif actual_next_state in holes:  # 掉入洞中
                 print("💀 掉入洞中，游戏结束！")
                 break
                 
@@ -174,7 +180,7 @@ class QLearningAgent:
         for actual_action in [(action - 1) % 4, action, (action + 1) % 4]:
             new_row, new_col = row, col
             
-            # 使用正确的gym动作定义
+            # 使用正确的gym作定义
             if actual_action == 0:    # 左
                 new_col = If(col > 0, col - 1, col)
             elif actual_action == 1:  # 下
@@ -247,9 +253,13 @@ class QLearningAgent:
         
         return success_probs[start_state]
 
-    def print_optimal_actions(self):
-        """打印4x4网格中每个位置的最优动作"""
-        action_symbols = {0: '←', 1: '↓', 2: '←', 3: '→', None: 'X'}
+    def print_optimal_actions(self, holes=[5, 7, 11]):
+        """打印4x4网格中每个位置的最优动作
+        
+        Args:
+            holes: 洞的位置列表，默认为[5, 7, 11]
+        """
+        action_symbols = {0: '←', 1: '↓', 2: '→', 3: '↑', None: 'X'}
         print("\n最优动作网格 (↑:上 ↓:下 ←:左 →:右 X:洞/终点):")
         
         for row in range(4):
@@ -257,7 +267,7 @@ class QLearningAgent:
                 state = row * 4 + col
                 if state == 15:  # 终点
                     action = None
-                elif state in [5, 7, 11]:  # 洞
+                elif state in holes:  # 洞
                     action = None
                 else:
                     action = self.get_action_z3(state)
@@ -280,40 +290,20 @@ if __name__ == "__main__":
     
     # 测试场景1：标准设置
     print("\n=== 测试场景1：标准设置 ===")
-    # 重置solver
     agent.solver = Solver()
-    # 重新添加基本约束
-    # agent.solver.add(agent.hole1 >= 0, agent.hole1 < 16)
-    # agent.solver.add(agent.hole2 >= 0, agent.hole2 < 16)
-    # agent.solver.add(agent.hole3 >= 0, agent.hole3 < 16)
-    # agent.solver.add(Distinct([agent.hole1, agent.hole2, agent.hole3]))
-    # agent.solver.add(agent.straight_prob >= 0, agent.straight_prob <= 1)
-    # agent.solver.add(agent.right_slide_prob >= 0, agent.right_slide_prob <= 1)
-    # agent.solver.add(agent.left_slide_prob >= 0, agent.left_slide_prob <= 1)
-    # agent.solver.add(agent.straight_prob + agent.right_slide_prob + agent.left_slide_prob == 1)
     
     # 设置具体参数
-    agent.solver.add(agent.hole1 == 5)
-    agent.solver.add(agent.hole2 == 7)
-    agent.solver.add(agent.hole3 == 11)
-    agent.solver.add(agent.straight_prob == 1/3)  # 使用精确的小数
+    holes_1 = [5, 7, 11]  # 定义洞的位置
+    agent.solver.add(agent.hole1 == holes_1[0])
+    agent.solver.add(agent.hole2 == holes_1[1])
+    agent.solver.add(agent.hole3 == holes_1[2])
+    agent.solver.add(agent.straight_prob == 1/3)
     agent.solver.add(agent.right_slide_prob == 1/3)
     agent.solver.add(agent.left_slide_prob == 1/3)
     
     # 计算成功概率
     success_prob = agent.calculate_success_probability(start_state=0)
     
-    def print_grid_probabilities(model):
-        print("\n网格形式的成功概率:")
-        for row in range(4):
-            for col in range(4):
-                state = row * 4 + col
-                state_prob = Real(f'success_prob_{state}')
-                prob_str = model.eval(state_prob).as_decimal(10)  # 减少小数位数
-                prob_value = safe_float_conversion(prob_str)
-                print(f"{prob_value:6.4f}", end=" ")
-            print()  # 换行
-
     # 求解并打印结果
     if agent.solver.check() == sat:
         model = agent.solver.model()
@@ -323,27 +313,24 @@ if __name__ == "__main__":
         print(f"左滑概率: {safe_float_conversion(model.eval(agent.left_slide_prob).as_decimal(20))}")
         print(f"\n从起点(0)到终点(15)的成功概率: {safe_float_conversion(model.eval(success_prob).as_decimal(20))}")
         
-        # 打印所有状态的成功概率
-        # print("\n各状态到达终点的概率:")
-        # for state in range(16):
-        #     state_prob = Real(f'success_prob_{state}')
-        #     prob_str = model.eval(state_prob).as_decimal(20)
-        #     prob_value = safe_float_conversion(prob_str)
-        #     print(f"状态 {state:2d}: {prob_value:.4f}")
-        
         # 打印最优动作
-        agent.print_optimal_actions()
+        agent.print_optimal_actions(holes=holes_1)
+        
+        # 模拟一个回合
+        # agent.simulate_episode(start_state=0, holes=holes_1)
     else:
         print("无解")
-        print(agent.solver.unsat_core())  # 打印不可满足的约束
+        print(agent.solver.unsat_core())
 
     # 测试场景2：更改洞的位置
     print("\n=== 测试场景2：更改洞的位置 ===")
     agent.solver = Solver()
-    # [重复添加基本约束的代码...]
-    agent.solver.add(agent.hole1 == 6)
-    agent.solver.add(agent.hole2 == 9)
-    agent.solver.add(agent.hole3 == 12)
+    
+    # 使用新的洞位置
+    holes_2 = [6, 9, 12]  # 新的洞位置
+    agent.solver.add(agent.hole1 == holes_2[0])
+    agent.solver.add(agent.hole2 == holes_2[1])
+    agent.solver.add(agent.hole3 == holes_2[2])
     agent.solver.add(agent.straight_prob == 0.5)
     agent.solver.add(agent.right_slide_prob == 0.3)
     agent.solver.add(agent.left_slide_prob == 0.2)
@@ -357,6 +344,11 @@ if __name__ == "__main__":
         print(f"右滑概率: {model.eval(agent.right_slide_prob)}")
         print(f"左滑概率: {model.eval(agent.left_slide_prob)}")
         print(f"从起点(0)到终点(15)的成功概率: {model.eval(success_prob)}")
+        
+        # 打印最��动作
+        agent.print_optimal_actions(holes=holes_2)
+        
+        # 模拟一个回合
+        # agent.simulate_episode(start_state=0, holes=holes_2)
     else:
         print("无解")
-    agent.print_optimal_actions()
