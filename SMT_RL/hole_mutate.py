@@ -71,167 +71,225 @@ def calculate_success_probability(action_matrix, state, holes, straight_prob, ri
     
     return success_probs[state], constraints
 
-def optimize_hole_positions():
-    # 初始化变量
+def optimize_grid_parameters(num_mutants=50, mutants_dir='mutants', grid_size=4, 
+                           optimize_holes=True, optimize_probs=False, 
+                           fixed_holes=None, fixed_probs=None):
+    """通用优化函数，可以优化洞的位置和/或滑动概率
+    
+    Args:
+        num_mutants: 变异体数量
+        mutants_dir: 存放变异体Q表的目录
+        grid_size: 网格大小
+        num_holes: 洞的数量
+    """
     optimizer = Optimize()
-    hole1 = Int('hole1')
-    hole2 = Int('hole2')
-    hole3 = Int('hole3')
-    
-    # 初始化两个agent并获取它们的动作矩阵
-    agent1 = QLearningAgent(16, 4)
-    agent2 = QLearningAgent(16, 4)
-    agent1.load_q_table('q_table1.npy')
-    agent2.load_q_table('q_table2.npy')
-    
-    action_matrix1 = agent1.get_optimal_action_matrix()
-    action_matrix2 = agent2.get_optimal_action_matrix()
+    total_states = grid_size * grid_size
+    # 初始化洞的位置变量
+    holes = [Int(f'hole{i}') for i in range(3)]  # 固定为3个洞
     
     # 设置基本约束
-    optimizer.add(hole1 > 0, hole1 < 15)
-    optimizer.add(hole2 > 0, hole2 < 15)
-    optimizer.add(hole3 > 0, hole3 < 15)
-    optimizer.add(Distinct([hole1, hole2, hole3]))
-    optimizer.add(hole1 >= 4, hole1 <= 11)
-    optimizer.add(hole2 >= 4, hole2 <= 11)
-    optimizer.add(hole3 >= 4, hole3 <= 11)
-    optimizer.add(hole1 < hole2)
-    optimizer.add(hole2 < hole3)
+    for i in range(3):  # 固定为3个洞
+        optimizer.add(holes[i] > 0, holes[i] < total_states-1)  # 不能在起点和终点
+        optimizer.add(holes[i] >= grid_size, holes[i] <= total_states-grid_size-1)  # 在中间区域
     
-    # 设置移动概率
-    straight_prob = RealVal(1)/3
-    right_slide_prob = RealVal(1)/3
-    left_slide_prob = RealVal(1)/3
+    # 确保洞的位置不重复且有序
+    optimizer.add(Distinct(holes))
+    for i in range(2):  # 固定为3个洞，所以是range(2)
+        optimizer.add(holes[i] < holes[i+1])
     
-    # 为每个状态创建概率变量
-    success_probs1 = {}
-    success_probs2 = {}
-    for s in range(16):
-        success_probs1[s] = Real(f'success_prob1_{s}')
-        success_probs2[s] = Real(f'success_prob2_{s}')
+    # 设置移动概率变量
+    straight_prob = Real('straight_prob')
+    right_slide_prob = Real('right_slide_prob')
+    left_slide_prob = Real('left_slide_prob')
     
-    # 添加终点概率约束
-    optimizer.add(success_probs1[15] == 1)
-    optimizer.add(success_probs2[15] == 1)
+    # 添加概率约束
+    optimizer.add(straight_prob == RealVal(1)/3)
+    optimizer.add(right_slide_prob == RealVal(1)/3)
+    optimizer.add(left_slide_prob == RealVal(1)/3)
     
-    # 为每个状态添加转移概率约束
-    for s in range(16):
-        if s == 15:  # 终点
-            optimizer.add(success_probs1[s] == 1)
-            optimizer.add(success_probs2[s] == 1)
-        else:  # 非终点状态
-            row, col = s // 4, s % 4
+    # 加载原始模型和变异体
+    original_agent = QLearningAgent(total_states, 4)
+    original_agent.load_q_table('q_table.npy')
+    
+    mutant_agents = []
+    for i in range(num_mutants):
+        agent = QLearningAgent(total_states, 4)
+        agent.load_q_table(f'{mutants_dir}/q_table_{i}.npy')
+        mutant_agents.append(agent)
+    
+    # 为原始模型和所有变异体创建概率变量
+    success_probs = {}
+    
+    # 为原始模型创建概率变量
+    for s in range(total_states):
+        success_probs['original_state_{}'.format(s)] = Real(f'success_prob_original_{s}')
+        if s == total_states-1:  # 终点概率为1
+            optimizer.add(success_probs['original_state_{}'.format(s)] == 1)
+    
+    # 为每个变异体创建概率变量
+    for i in range(num_mutants):
+        for s in range(total_states):
+            success_probs[f'mutant_{i}_state_{s}'] = Real(f'success_prob_mutant_{i}_{s}')
+            if s == total_states-1:  # 终点概率为1
+                optimizer.add(success_probs[f'mutant_{i}_state_{s}'] == 1)
+    
+    # 为原始模型添加转移概率约束
+    action_matrix_original = original_agent.get_optimal_action_matrix()
+    for s in range(total_states):
+        if s != total_states-1:  # 非终点状态
+            row, col = s // grid_size, s % grid_size
+            action = action_matrix_original[row, col]
             
-            # 对agent1的约束
-            action1 = action_matrix1[row, col]
-            next_states1 = []
-            for actual_action in [(action1 - 1) % 4, action1, (action1 + 1) % 4]:
+            # 计算三个可能的下一个状态
+            next_states = []
+            for actual_action in [(action - 1) % 4, action, (action + 1) % 4]:
                 new_row, new_col = row, col
                 if actual_action == 0:    # 左
                     new_col = max(0, col - 1)
                 elif actual_action == 1:  # 下
-                    new_row = min(3, row + 1)
+                    new_row = min(grid_size-1, row + 1)
                 elif actual_action == 2:  # 右
-                    new_col = min(3, col + 1)
+                    new_col = min(grid_size-1, col + 1)
                 elif actual_action == 3:  # 上
                     new_row = max(0, row - 1)
-                next_states1.append(new_row * 4 + new_col)
-            
-            # 对agent2的约束
-            action2 = action_matrix2[row, col]
-            next_states2 = []
-            for actual_action in [(action2 - 1) % 4, action2, (action2 + 1) % 4]:
-                new_row, new_col = row, col
-                if actual_action == 0:    # 左
-                    new_col = max(0, col - 1)
-                elif actual_action == 1:  # 下
-                    new_row = min(3, row + 1)
-                elif actual_action == 2:  # 右
-                    new_col = min(3, col + 1)
-                elif actual_action == 3:  # 上
-                    new_row = max(0, row - 1)
-                next_states2.append(new_row * 4 + new_col)
+                next_states.append(new_row * grid_size + new_col)
             
             # 添加转移概率约束
-            is_hole = Or(s == hole1, s == hole2, s == hole3)
+            is_hole = Or(s == holes[0], s == holes[1], s == holes[2])
             
-            # agent1的转移概率约束
-            next_prob1 = Sum([
-                left_slide_prob * success_probs1[next_states1[0]],
-                straight_prob * success_probs1[next_states1[1]],
-                right_slide_prob * success_probs1[next_states1[2]]
+            next_prob = Sum([
+                left_slide_prob * success_probs[f'original_state_{next_states[0]}'],
+                straight_prob * success_probs[f'original_state_{next_states[1]}'],
+                right_slide_prob * success_probs[f'original_state_{next_states[2]}']
             ])
-            optimizer.add(success_probs1[s] == If(is_hole, 0, next_prob1))
             
-            # agent2的转移概率约束
-            next_prob2 = Sum([
-                left_slide_prob * success_probs2[next_states2[0]],
-                straight_prob * success_probs2[next_states2[1]],
-                right_slide_prob * success_probs2[next_states2[2]]
-            ])
-            optimizer.add(success_probs2[s] == If(is_hole, 0, next_prob2))
-            
-            # 添加概率范围约束
-            optimizer.add(success_probs1[s] >= 0)
-            optimizer.add(success_probs1[s] <= 1)
-            optimizer.add(success_probs2[s] >= 0)
-            optimizer.add(success_probs2[s] <= 1)
+            optimizer.add(success_probs[f'original_state_{s}'] == If(is_hole, 0, next_prob))
+            optimizer.add(success_probs[f'original_state_{s}'] >= 0)
+            optimizer.add(success_probs[f'original_state_{s}'] <= 1)
     
-    # 打印约束，帮助调试
-    print("\n=== 约束示例 ===")
-    print(f"State 14的约束: {optimizer.assertions()[-4]}")
+    # 为每个变异体添加转移概率约束
+    for i, agent in enumerate(mutant_agents):
+        action_matrix = agent.get_optimal_action_matrix()
+        
+        for s in range(total_states):
+            if s != total_states-1:  # 非终点状态
+                row, col = s // grid_size, s % grid_size
+                action = action_matrix[row, col]
+                
+                # 计算三个可能的下一个状态
+                next_states = []
+                for actual_action in [(action - 1) % 4, action, (action + 1) % 4]:
+                    new_row, new_col = row, col
+                    if actual_action == 0:    # 左
+                        new_col = max(0, col - 1)
+                    elif actual_action == 1:  # 下
+                        new_row = min(grid_size-1, row + 1)
+                    elif actual_action == 2:  # 右
+                        new_col = min(grid_size-1, col + 1)
+                    elif actual_action == 3:  # 上
+                        new_row = max(0, row - 1)
+                    next_states.append(new_row * grid_size + new_col)
+                
+                # 添加转移概率约束
+                is_hole = Or(s == holes[0], s == holes[1], s == holes[2])
+                
+                next_prob = Sum([
+                    left_slide_prob * success_probs[f'mutant_{i}_state_{next_states[0]}'],
+                    straight_prob * success_probs[f'mutant_{i}_state_{next_states[1]}'],
+                    right_slide_prob * success_probs[f'mutant_{i}_state_{next_states[2]}']
+                ])
+                
+                optimizer.add(success_probs[f'mutant_{i}_state_{s}'] == If(is_hole, 0, next_prob))
+                optimizer.add(success_probs[f'mutant_{i}_state_{s}'] >= 0)
+                optimizer.add(success_probs[f'mutant_{i}_state_{s}'] <= 1)
     
-    # 最大化差异
-    optimizer.maximize((success_probs1[0] - success_probs2[0]))
+    # 计算变异体的平均成功概率
+    mutants_avg_prob = Sum([success_probs[f'mutant_{i}_state_0'] for i in range(num_mutants)]) / num_mutants
+    
+    # 最大化原始模型与变异体平均性能的差异
+    optimizer.maximize(success_probs['original_state_0'] - mutants_avg_prob)
     
     # 设置求解器超时时间
-    optimizer.set("timeout", 30000)
+    optimizer.set("timeout", 60000)  # 60秒超时
     
     # 求解和输出结果
     if optimizer.check() == sat:
         model = optimizer.model()
         
-        hole1_pos = model.eval(hole1).as_long()
-        hole2_pos = model.eval(hole2).as_long()
-        hole3_pos = model.eval(hole3).as_long()
-        
-        # 直接打印Z3的结果，不进行转换
-        print("\n=== Agent 1 的状态概率 ===")
-        for s in range(16):
-            print(f"状态 {s}: {model.eval(success_probs1[s])}")
-            
-        print("\n=== Agent 2 的状态概率 ===")
-        for s in range(16):
-            print(f"状态 {s}: {model.eval(success_probs2[s])}")
-        
-        prob1 = model.eval(success_probs1[0])
-        prob2 = model.eval(success_probs2[0])
+        # 获取洞的位置
+        hole_positions = [model.eval(h).as_long() for h in holes]
         
         print("\n=== 优化结果 ===")
-        print(f"最优洞位置: {hole1_pos}, {hole2_pos}, {hole3_pos}")
-        print(f"Agent 1 成功概率: {prob1}")
-        print(f"Agent 2 成功概率: {prob2}")
-        print(f"最大概率差异: {model.eval((success_probs1[0] - success_probs2[0]))}")
+        print(f"最优洞位置: {hole_positions}")
+        
+        # 计算并打印原始模型和变异体的成功概率
+        original_prob = model.eval(success_probs['original_state_0'])
+        print(f"\n原始模型成功概率: {original_prob}")
+        
+        print("\n=== 变异体成功概率 ===")
+        total_mutant_prob = RealVal(0)  # 使用Z3的RealVal初始化
+        for i in range(num_mutants):
+            prob = model.eval(success_probs[f'mutant_{i}_state_0'])
+            print(f"变异体 {i} 成功概率: {prob}")
+            total_mutant_prob += prob  # 直接使用Z3的数值相加
+        
+        avg_mutant_prob = total_mutant_prob / num_mutants
+        print(f"\n变异体平均成功概率: {avg_mutant_prob}")
+        print(f"性能差异: {original_prob - avg_mutant_prob}")
         
         # 可视化结果
-        grid = ['.'] * 16
-        grid[hole1_pos] = 'H'
-        grid[hole2_pos] = 'H'
-        grid[hole3_pos] = 'H'
+        grid = ['.'] * total_states
+        for pos in hole_positions:
+            grid[pos] = 'H'
         grid[0] = 'S'
-        grid[15] = 'G'
+        grid[total_states-1] = 'G'
         
         print("\n网格布局:")
-        for i in range(0, 16, 4):
-            print(' '.join(grid[i:i+4]))
+        for i in range(0, total_states, grid_size):
+            print(' '.join(grid[i:i+grid_size]))
             
-        print("\nAgent 1 的最优动作:")
-        agent1.print_optimal_actions([hole1_pos, hole2_pos, hole3_pos])
+        # 打印原始模型的最优动作
+        print("\n原始模型的最优动作:")
+        original_agent.print_optimal_actions(hole_positions)
         
-        print("\nAgent 2 的最优动作:")
-        agent2.print_optimal_actions([hole1_pos, hole2_pos, hole3_pos])
+        # 打印第一个变异体的最优动作作为示例
+        print("\n变异体示例(第一个)的最优动作:")
+        mutant_agents[0].print_optimal_actions(hole_positions)
     else:
         print("无解")
+    
+    return optimizer, holes, (straight_prob, right_slide_prob, left_slide_prob)
+
+def optimize_hole_positions(num_mutants=50, mutants_dir='mutants', grid_size=4):
+    """优化洞的位置（固定概率）"""
+    fixed_probs = (1/3, 1/3, 1/3)  # 固定的移动概率
+    return optimize_grid_parameters(
+        num_mutants=num_mutants,
+        mutants_dir=mutants_dir,
+        grid_size=grid_size,
+        optimize_holes=True,
+        optimize_probs=False,
+        fixed_probs=fixed_probs
+    )
+
+def optimize_slide_probabilities(num_mutants=50, mutants_dir='mutants', grid_size=4, fixed_holes=None):
+    """优化滑动概率（固定洞的位置）"""
+    if fixed_holes is None:
+        raise ValueError("必须提供固定的洞位置")
+    
+    return optimize_grid_parameters(
+        num_mutants=num_mutants,
+        mutants_dir=mutants_dir,
+        grid_size=grid_size,
+        optimize_holes=False,
+        optimize_probs=True,
+        fixed_holes=fixed_holes
+    )
 
 if __name__ == "__main__":
-    optimize_hole_positions()
+    # 示例：优化洞的位置
+    optimize_hole_positions(grid_size=4)
+    
+    # 示例：优化滑动概率
+    # fixed_holes = [5, 6, 9]  # 这些值需要根据实际情况设置
+    # optimize_slide_probabilities(grid_size=4, fixed_holes=fixed_holes)
