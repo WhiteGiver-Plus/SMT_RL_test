@@ -73,28 +73,33 @@ def calculate_success_probability(action_matrix, state, holes, straight_prob, ri
 
 def optimize_grid_parameters(num_mutants=50, mutants_dir='mutants', grid_size=4, 
                            optimize_holes=True, optimize_probs=False, 
-                           fixed_holes=None, fixed_probs=None):
+                           fixed_holes=None, fixed_probs=None, num_holes=3):
     """通用优化函数，可以优化洞的位置和/或滑动概率
     
     Args:
         num_mutants: 变异体数量
         mutants_dir: 存放变异体Q表的目录
         grid_size: 网格大小
+        optimize_holes: 是否优化洞的位置
+        optimize_probs: 是否优化概率
+        fixed_holes: 固定的洞位置
+        fixed_probs: 固定的概率值
         num_holes: 洞的数量
     """
     optimizer = Optimize()
     total_states = grid_size * grid_size
+    
     # 初始化洞的位置变量
-    holes = [Int(f'hole{i}') for i in range(3)]  # 固定为3个洞
+    holes = [Int(f'hole{i}') for i in range(num_holes)]  # 使用 num_holes
     
     # 设置基本约束
-    for i in range(3):  # 固定为3个洞
+    for i in range(num_holes):  # 使用 num_holes
         optimizer.add(holes[i] > 0, holes[i] < total_states-1)  # 不能在起点和终点
         optimizer.add(holes[i] >= grid_size, holes[i] <= total_states-grid_size-1)  # 在中间区域
     
     # 确保洞的位置不重复且有序
     optimizer.add(Distinct(holes))
-    for i in range(2):  # 固定为3个洞，所以是range(2)
+    for i in range(num_holes-1):  # 使用 num_holes-1
         optimizer.add(holes[i] < holes[i+1])
     
     # 设置移动概率变量
@@ -155,7 +160,7 @@ def optimize_grid_parameters(num_mutants=50, mutants_dir='mutants', grid_size=4,
                 next_states.append(new_row * grid_size + new_col)
             
             # 添加转移概率约束
-            is_hole = Or(s == holes[0], s == holes[1], s == holes[2])
+            is_hole = Or([s == h for h in holes])
             
             next_prob = Sum([
                 left_slide_prob * success_probs[f'original_state_{next_states[0]}'],
@@ -191,7 +196,7 @@ def optimize_grid_parameters(num_mutants=50, mutants_dir='mutants', grid_size=4,
                     next_states.append(new_row * grid_size + new_col)
                 
                 # 添加转移概率约束
-                is_hole = Or(s == holes[0], s == holes[1], s == holes[2])
+                is_hole = Or([s == h for h in holes])
                 
                 next_prob = Sum([
                     left_slide_prob * success_probs[f'mutant_{i}_state_{next_states[0]}'],
@@ -249,7 +254,7 @@ def optimize_grid_parameters(num_mutants=50, mutants_dir='mutants', grid_size=4,
             print(' '.join(grid[i:i+grid_size]))
             
         # 打印原始模型的最优动作
-        print("\n原始模型的最优动作:")
+        print("\n原始模��的最优动作:")
         original_agent.print_optimal_actions(hole_positions)
         
         # 打印第一个变异体的最优动作作为示例
@@ -260,8 +265,15 @@ def optimize_grid_parameters(num_mutants=50, mutants_dir='mutants', grid_size=4,
     
     return optimizer, holes, (straight_prob, right_slide_prob, left_slide_prob)
 
-def optimize_hole_positions(num_mutants=50, mutants_dir='mutants', grid_size=4):
-    """优化洞的位置（固定概率）"""
+def optimize_hole_positions(num_mutants=50, mutants_dir='mutants', grid_size=4, num_holes=3):
+    """优化洞的位置（固定概率）
+    
+    Args:
+        num_mutants: 变异体数量
+        mutants_dir: 变异体目录
+        grid_size: 网格大小
+        num_holes: 洞的数量
+    """
     fixed_probs = (1/3, 1/3, 1/3)  # 固定的移动概率
     return optimize_grid_parameters(
         num_mutants=num_mutants,
@@ -269,7 +281,8 @@ def optimize_hole_positions(num_mutants=50, mutants_dir='mutants', grid_size=4):
         grid_size=grid_size,
         optimize_holes=True,
         optimize_probs=False,
-        fixed_probs=fixed_probs
+        fixed_probs=fixed_probs,
+        num_holes=num_holes  # 传递 num_holes 参数
     )
 
 def optimize_slide_probabilities(num_mutants=50, mutants_dir='mutants', grid_size=4, fixed_holes=None):
@@ -287,9 +300,7 @@ def optimize_slide_probabilities(num_mutants=50, mutants_dir='mutants', grid_siz
     )
 
 if __name__ == "__main__":
-    # 示例：优化洞的位置
-    optimize_hole_positions(grid_size=4)
-    
-    # 示例：优化滑动概率
-    # fixed_holes = [5, 6, 9]  # 这些值需要根据实际情况设置
-    # optimize_slide_probabilities(grid_size=4, fixed_holes=fixed_holes)
+    # 示例：优化洞的位置，可以指定不同的洞数量
+    optimize_hole_positions(grid_size=4, num_holes=4)  # 例如使用2个洞
+    # 或者
+    # optimize_hole_positions(grid_size=4, num_holes=4)  # 使用4个洞

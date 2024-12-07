@@ -1,10 +1,10 @@
 import gymnasium as gym
 import numpy as np
-
+is_slippery = False
 class QTableTrainer:
-    def __init__(self, learning_rate=0.1, discount_factor=0.96, epsilon=1.0, epsilon_decay=0.995, epsilon_min=0.01):
+    def __init__(self, learning_rate=0.1, discount_factor=0.96, epsilon=1.0, epsilon_decay=0.997, epsilon_min=0.01):
         # 创建冰湖环境
-        self.env = gym.make('FrozenLake-v1', is_slippery=True)
+        self.env = gym.make('FrozenLake-v1', is_slippery=is_slippery)
         
         # 训练参数
         self.lr = learning_rate
@@ -50,12 +50,12 @@ class QTableTrainer:
             if (episode + 1) % 1000 == 0:
                 print(f"Episode {episode + 1}/{episodes}")
     
-    def save_q_table(self, filename="q_table.npy"):
+    def save_q_table(self, filename="q_table_no_slippery.npy"):
         np.save(filename, self.q_table)
     
     def evaluate(self, num_episodes=1000, render=False):
         # 创建测试环境
-        test_env = gym.make('FrozenLake-v1', is_slippery=True, 
+        test_env = gym.make('FrozenLake-v1', is_slippery=is_slippery, 
                            render_mode='human' if render else None)
         successes = 0
         
