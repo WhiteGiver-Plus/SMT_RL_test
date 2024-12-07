@@ -72,7 +72,7 @@ def optimize_multiple_slippery_positions(num_cases=3, num_slippery=3, grid_size=
     
     # 加载原始模型
     agent = QLearningAgent(total_states, 4)
-    agent.load_q_table('q_table_roburst.npy')
+    agent.load_q_table('SMT_RL/q_table_dqn_robust.npy')
     action_matrix = agent.get_optimal_action_matrix()
     
     # 为每个测试用例创建成功概率变量

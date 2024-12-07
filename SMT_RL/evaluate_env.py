@@ -16,7 +16,7 @@ def calculate_success_probability(slippery_positions, grid_size=4, holes=[5, 7, 
     
     # 加载Q表并获取最优动作矩阵
     agent = QLearningAgent(total_states, 4)
-    agent.load_q_table('q_table_roburst.npy')
+    agent.load_q_table('SMT_RL/q_table_robust.npy')
     action_matrix = agent.get_optimal_action_matrix()
     
     # 初始化状态转移概率
