@@ -38,10 +38,9 @@ def generate_balanced_scenario():
     solver.add(total >= 40, total <= 100)
     
     # 确保方向间的车辆数量差异不会太大
-    for v1 in vars:
-        for v2 in vars:
-            if v1 != v2:
-                solver.add(Abs(v1 - v2) <= 10)
+    for i in range(len(vars)):
+        for j in range(i + 1, len(vars)):  # 避免重复比较
+            solver.add(Abs(vars[i] - vars[j]) <= 10)
     
     model = generate_test_case(solver, vars)
     if model:
@@ -61,8 +60,9 @@ def generate_congested_scenario():
     north, south, east, west = vars
     
     # 添加拥堵约束
-    solver.add(north + south + east + west >= 150)
-    solver.add(north >= 30, south >= 30, east >= 30, west >= 30)
+    solver.add(north + south + east + west >= 80)
+    solver.add(north + south + east + west <= 120)
+    solver.add(north >= 15, south >= 15, east >= 15, west >= 15)
     
     model = generate_test_case(solver, vars)
     if model:
@@ -112,22 +112,22 @@ def calculate_optimal_sequence(scenario):
     
     # 简单的贪心策略：优先处理等待车辆最多的方向
     sequence = []
-    rewards = 0
+    rewards = 0.0  # 使用Python float
     remaining_vehicles = vehicles.copy()
     
     for _ in range(10):  # 假设测试10个时间步
         # 找到等待车辆最多的方向
-        max_idx = np.argmax(remaining_vehicles)
+        max_idx = int(np.argmax(remaining_vehicles))  # 转换为Python int
         sequence.append(max_idx)
         
         # 计算该动作的奖励
-        cleared_vehicles = min(8, remaining_vehicles[max_idx])  # 假设每次最多清除8辆车
+        cleared_vehicles = min(8, remaining_vehicles[max_idx])
         remaining_vehicles[max_idx] = max(0, remaining_vehicles[max_idx] - cleared_vehicles)
         
         # 其他方向可能增加车辆
         for i in range(4):
             if i != max_idx:
-                remaining_vehicles[i] = min(50, remaining_vehicles[i] + 2)  # 平均每次增加2辆车
+                remaining_vehicles[i] = min(50, remaining_vehicles[i] + 2)
         
         # 计算奖励
         total_waiting = sum(remaining_vehicles)
@@ -135,8 +135,8 @@ def calculate_optimal_sequence(scenario):
         rewards += reward
     
     return {
-        'sequence': sequence,
-        'max_reward': rewards
+        'sequence': [int(x) for x in sequence],  # 确保序列中的所有数字都是Python int
+        'max_reward': float(rewards)  # 确保奖励值是Python float
     }
 
 def generate_test_suite(output_dir='test_cases'):

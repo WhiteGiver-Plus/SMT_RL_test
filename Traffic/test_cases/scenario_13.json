@@ -1,0 +1,20 @@
+{
+    "north": 35,
+    "south": 15,
+    "east": 15,
+    "west": 15,
+    "type": "congested",
+    "optimal_sequence": [
+        0,
+        0,
+        0,
+        1,
+        2,
+        3,
+        0,
+        1,
+        2,
+        3
+    ],
+    "max_reward": 10.999999999999996
+}

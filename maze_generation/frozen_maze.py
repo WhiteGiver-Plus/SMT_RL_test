@@ -136,7 +136,7 @@ def main():
     max_size = 8    # 最大地图大小
     min_wall = 5    # 最小墙体数量
     max_wall = 8  # 最大墙体数量
-    min_steps = 0  # 寻找大于多少步数的路径
+    min_steps = 15  # 寻找大于多少步数的路径
     
     # 这些参数都可以从命令行或配置文件读取
     generator = FrozenMazeGenerator(min_size, max_size, min_wall, max_wall, min_steps)
