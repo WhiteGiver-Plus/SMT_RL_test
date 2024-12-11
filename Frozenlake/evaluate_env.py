@@ -16,7 +16,7 @@ def calculate_success_probability(slippery_positions, grid_size=4, holes=[5, 7, 
     
     # 加载Q表并获取最优动作矩阵
     agent = QLearningAgent(total_states, 4)
-    agent.load_q_table('SMT_RL/q_table_robust.npy')
+    agent.load_q_table('q_table_robust.npy')
     action_matrix = agent.get_optimal_action_matrix()
     
     # 初始化状态转移概率
@@ -68,9 +68,9 @@ def calculate_success_probability(slippery_positions, grid_size=4, holes=[5, 7, 
 def evaluate_test_cases():
     """评估测试用例文件中的所有环境"""
     test_cases = [
-        [1, 2, 3, 10],  # 测试用例1的滑块位置
-        [6, 10, 12, 14],  # 测试用例2的滑块位置
-        [1, 4, 6, 8],  # 测试用例3的滑块位置
+        [1, 2, 3],  # 测试用例1的滑块位置
+        [6, 10, 14],  # 测试用例2的滑块位置
+        [4, 6, 10],  # 测试用例3的滑块位置
     ]
     
     print("=== 评估结果 ===")

@@ -225,8 +225,8 @@ if __name__ == "__main__":
     optimizer = SlipperyOptimizer(grid_size=4, holes=[5, 7, 11])
     
     results = optimizer.optimize_slippery_positions(
-        original_path='q_table.npy',
-        mutants_dir='mutants/q_table',
+        original_path='q_table_robust.npy',
+        mutants_dir='mutants/q_table_robust',
         num_slippery=3,
         timeout=120000
     )
