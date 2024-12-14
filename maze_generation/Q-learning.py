@@ -1,8 +1,9 @@
 import numpy as np
 import random
+import matplotlib.pyplot as plt
 
 class FrozenLakeQLearning:
-    def __init__(self):
+    def __init__(self, difficulty='easy'):
         # 迷宫布局 (0:空地, 1:墙, 2:目标)
         self.maze = np.array([
             [0, 1, 0, 0, 1, 0, 0, 0],
@@ -15,11 +16,17 @@ class FrozenLakeQLearning:
             [0, 0, 0, 0, 0, 1, 0, 0]
         ])
         
-        # 设置目标位置 - 选择步数为19的位置作为目标
-        self.goals = [(5, 5)]  # 步数为19的位置
-        for x, y in self.goals:
-            self.maze[x][y] = 2
-            
+        # 保存难度设置
+        self.difficulty = difficulty
+        
+        # 根据难度设置目标位置
+        if difficulty == 'easy':
+            self.goals = [(6, 2)]  # 简单例子终点
+            self.target_reward = 50
+        else:
+            self.goals = [(6, 5)]  # 难例子终点
+            self.target_reward = 100
+        
         self.start = (0, 0)
         self.height, self.width = self.maze.shape
         self.n_states = self.height * self.width
@@ -49,18 +56,17 @@ class FrozenLakeQLearning:
             if (new_x < 0 or new_x >= self.height or 
                 new_y < 0 or new_y >= self.width or 
                 self.maze[new_x][new_y] == 1):
+                # 如果在撞墙时的位置是目标,则算作到达目标
+                if (x, y) in self.goals:
+                    return (x, y)
                 return (x, y)
             
             x, y = new_x, new_y
-            
-            # 如果到达目标，停止
-            if (x, y) in self.goals:
-                return (x, y)
     
     def get_reward(self, pos):
         """获取在当前位置的奖励"""
         if pos in self.goals:
-            return 100  # 增加到达目标的奖励
+            return self.target_reward
         return -1     # 移动惩罚
     
     def test_performance(self, num_tests=100):
@@ -97,17 +103,18 @@ class FrozenLakeQLearning:
         
         return avg_reward, avg_steps, success_rate
     
-    def train(self, episodes=1000, alpha=0.1, gamma=0.99, epsilon=0.1):
+    def train(self, episodes=200, alpha=0.1, gamma=0.99, epsilon=0.1):
         """训练Q-learning agent"""
         best_path = None
         best_path_length = float('inf')
+        best_path_lengths = []  # 记录每10步的最优路径长度
         
         # 记录训练过程
         training_history = []
         
         # 计算running reward
         running_reward = 0
-        running_length = 100  # 计算最近100个episode的平均reward
+        running_length = 10  # 计算最近10个episode的平均reward
         episode_rewards = []
         
         for episode in range(episodes):
@@ -146,73 +153,137 @@ class FrozenLakeQLearning:
                 episode_rewards.pop(0)
             running_reward = np.mean(episode_rewards)
             
-            # 每100个episode报告running reward
-            if (episode + 1) % 100 == 0:
-                print(f"Episode {episode + 1}: Running reward: {running_reward:.2f}")
-            
             # 记录最短路径
             if done and len(path) < best_path_length:
                 best_path = path
                 best_path_length = len(path)
             
-            # 每1000个episode测试并记录性能
-            if (episode + 1) % 1000 == 0:
-                avg_reward, avg_steps, success_rate = self.test_performance()
-                training_history.append({
-                    'episode': episode + 1,
-                    'avg_reward': avg_reward,
-                    'avg_steps': avg_steps,
-                    'success_rate': success_rate,
-                    'epsilon': epsilon,
-                    'running_reward': running_reward
-                })
-                print("------------------------")
-                print(f"Performance at episode {episode + 1}:")
-                print(f"  Average Reward: {avg_reward:.2f}")
-                print(f"  Average Steps: {avg_steps:.2f}")
-                print(f"  Success Rate: {success_rate:.2%}")
-                print(f"  Epsilon: {epsilon:.3f}")
-                print(f"  Running Reward: {running_reward:.2f}")
-                print("------------------------")
-            
-            # 降低探索率
-            if episode % 1000 == 0:
+            # 每10个episode记录并输出
+            if (episode + 1) % 10 == 0:
+                best_path_lengths.append(best_path_length)
+                print(f"Episode {episode + 1}: Best path length: {best_path_length}")
+                print(f"Running reward: {running_reward:.2f}")
+                print(f"Epsilon: {epsilon:.3f}")
+                
+                # 降低探索率
                 epsilon = max(0.01, epsilon * 0.995)
         
-        return best_path, training_history
+        # 绘制最优路径长度变化图
+        plt.figure()
+        plt.plot(range(10, episodes + 1, 10), best_path_lengths)
+        plt.xlabel('Episodes')
+        plt.ylabel('Best Path Length')
+        plt.title(f'Q-Learning Best Path Length vs Episodes ({self.difficulty})')
+        plt.savefig(f'q_learning_{self.difficulty}_path_lengths.png')
+        plt.close()
+        
+        return best_path, best_path_lengths
     
     def visualize_path(self, path):
         """可视化路径"""
-        maze_vis = np.array(self.maze, dtype=str)
-        maze_vis[maze_vis == '0'] = '.'
-        maze_vis[maze_vis == '1'] = '#'
-        maze_vis[maze_vis == '2'] = 'G'
+        # 创建图形
+        plt.figure(figsize=(10, 10))
         
-        for i, (x, y) in enumerate(path):
-            if (x, y) not in self.goals:
-                maze_vis[x][y] = str(i)
+        # 绘制网格底色
+        plt.imshow(self.maze, cmap='binary', alpha=0.2)
         
-        print("\nOptimal path:")
-        for row in maze_vis:
-            print(' '.join(row))
+        # 绘制网格线
+        for i in range(self.height + 1):
+            plt.axhline(y=i - 0.5, color='gray', linestyle='-', alpha=0.3)
+        for j in range(self.width + 1):
+            plt.axvline(x=j - 0.5, color='gray', linestyle='-', alpha=0.3)
+        
+        # 绘制墙壁
+        wall_positions = np.where(self.maze == 1)
+        plt.scatter(wall_positions[1], wall_positions[0], 
+                color='black', marker='s', s=500)
+        
+        # 绘制路径箭头和数字
+        path_coords = np.array(path)
+        for i in range(len(path)-1):
+            current = path[i]
+            next_pos = path[i+1]
+            
+            # 只有当位置发生变化时才画箭头
+            if current != next_pos:
+                # 计算箭头方向
+                dy = next_pos[1] - current[1]
+                dx = next_pos[0] - current[0]
+                
+                # 绘制箭头
+                plt.arrow(current[1], current[0], 
+                        dy*0.45, dx*0.45,  # 缩短箭头长度
+                        head_width=0.2, 
+                        head_length=0.2, 
+                        fc='blue', 
+                        ec='blue',
+                        alpha=0.8,
+                        length_includes_head=True,
+                        width=0.1)  # 加粗箭头
+                
+                # 在路径点上标记序号
+                if current != self.start and current not in self.goals:
+                    plt.text(current[1], current[0], str(i), 
+                            ha='center', va='center', 
+                            color='black',
+                            fontweight='bold',
+                            fontsize=12,
+                            bbox=dict(facecolor='white', 
+                                    edgecolor='blue',
+                                    alpha=0.7))
+        
+        # 标记起点和终点
+        plt.scatter(self.start[1], self.start[0], 
+                color='lime', marker='o', s=500, label='Start')
+        plt.text(self.start[1], self.start[0], 'S', 
+                ha='center', va='center', 
+                color='white', 
+                fontweight='bold',
+                fontsize=14)
+        
+        for goal in self.goals:
+            plt.scatter(goal[1], goal[0], 
+                    color='red', marker='o', s=500, label='Goal')
+            plt.text(goal[1], goal[0], 'G', 
+                    ha='center', va='center', 
+                    color='white', 
+                    fontweight='bold',
+                    fontsize=14)
+        
+        # 设置图形属性
+        plt.grid(True, alpha=0.3)
+        plt.title(f'Q-Learning Optimal Path ({self.difficulty})', 
+                pad=20, fontsize=14, fontweight='bold')
+        plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.05), 
+                ncol=2, fontsize=12)
+        
+        # 调整坐标轴
+        plt.xlim(-0.5, self.width - 0.5)
+        plt.ylim(self.height - 0.5, -0.5)  # 翻转y轴使得原点在左上角
+        
+        # 移除坐标轴刻度
+        plt.xticks([])
+        plt.yticks([])
+        
+        # 保存图片,增加分辨率
+        plt.savefig(f'q_learning_{self.difficulty}_optimal_path.png', 
+                    bbox_inches='tight', 
+                    dpi=300,
+                    pad_inches=0.2)
+        plt.close()
 
 def main():
-    # 创建并训练agent
-    agent = FrozenLakeQLearning()
-    print("Training Q-learning agent...")
-    best_path, history = agent.train(episodes=1000)
+    # 训练简单例子
+    print("\nTraining on Easy Map...")
+    agent_easy = FrozenLakeQLearning(difficulty='easy')
+    best_path_easy, history_easy = agent_easy.train(episodes=200)  # 改为200轮
+    agent_easy.visualize_path(best_path_easy)
     
-    # 显示最优路径
-    agent.visualize_path(best_path)
-    print(f"\nPath length: {len(best_path)-1} steps")
-    print(f"Path: {best_path}")
-    
-    # 显示最终性能
-    print("\nFinal Performance:")
-    avg_reward, avg_steps, success_rate = agent.test_performance()
-    print(f"Average Reward: {avg_reward:.2f}")
-    print(f"Average Steps: {avg_steps:.2f}")
-    print(f"Success Rate: {success_rate:.2%}")
+    # 训练难例子
+    print("\nTraining on Hard Map...")
+    agent_hard = FrozenLakeQLearning(difficulty='hard')
+    best_path_hard, history_hard = agent_hard.train(episodes=200)  # 改为200轮
+    agent_hard.visualize_path(best_path_hard)
 
 if __name__ == "__main__":
     main()
